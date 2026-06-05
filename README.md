@@ -1,3 +1,5 @@
+<img width="1916" height="868" alt="Screenshot 2026-06-03 214149" src="https://github.com/user-attachments/assets/57744767-9898-4e2b-946b-5236e8288acf" />
+
 # AI-Based-Space-Debris-Detection
 A project for Space Situational Awareness
 
