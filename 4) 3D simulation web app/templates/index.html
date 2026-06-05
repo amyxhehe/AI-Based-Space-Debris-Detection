@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Space Debris Collision Risk Simulation</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    color: #c8d8e8;
+    font-family: 'Segoe UI', 'Courier New', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top bar ─────────────────────────────────── */
+  #top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 18px;
+    background: rgba(5, 12, 28, 0.95);
+    border-bottom: 1px solid #0d2a4a;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  #top-bar h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #5bc8f5;
+  }
+  #top-stats {
+    display: flex;
+    gap: 22px;
+    font-size: 11px;
+    color: #7a9bb5;
+  }
+  .top-stat span { color: #5bc8f5; font-weight: 600; }
+
+  /* ── Main layout ──────────────────────────────── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  #canvas-container {
+    flex: 1;
+    position: relative;
+  }
+
+  #three-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── Loading overlay ──────────────────────────── */
+  #loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 5, 15, 0.88);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 20;
+    transition: opacity 0.4s;
+  }
+  #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #0d2a4a;
+    border-top-color: #5bc8f5;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading-text {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #5bc8f5;
+  }
+
+  /* ── HUD overlay on canvas ───────────────────── */
+  #hud {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    font-size: 11px;
+    color: #4a7090;
+    pointer-events: none;
+  }
+
+  /* ── Sidebar ──────────────────────────────────── */
+  #sidebar {
+    width: 270px;
+    background: rgba(5, 12, 28, 0.97);
+    border-left: 1px solid #0d2a4a;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .panel-section {
+    padding: 14px 16px;
+    border-bottom: 1px solid #0d2a4a;
+  }
+
+  .section-title {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #3a5a7a;
+    margin-bottom: 12px;
+  }
+
+  /* ── Sliders ──────────────────────────────────── */
+  .param-row { margin-bottom: 14px; }
+
+  .param-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: #8ab0cc;
+  }
+
+  .param-label .param-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #5bc8f5;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: #0d2a4a;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #5bc8f5;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(91,200,245,0.6);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #5bc8f5;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* ── Buttons ──────────────────────────────────── */
+  .btn {
+    padding: 7px 14px;
+    border: 1px solid #1a4a6a;
+    background: rgba(91,200,245,0.08);
+    color: #5bc8f5;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .btn:hover { background: rgba(91,200,245,0.18); border-color: #5bc8f5; }
+  .btn:active { background: rgba(91,200,245,0.28); }
+
+  .btn-primary {
+    width: 100%;
+    background: rgba(91,200,245,0.12);
+    margin-top: 4px;
+  }
+
+  /* ── Playback controls ────────────────────────── */
+  #playback-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  #playback-row .btn { padding: 6px 10px; font-size: 13px; flex-shrink: 0; }
+  #btn-play { font-size: 14px; }
+
+  #time-slider-container { position: relative; }
+  #time-slider {
+    width: 100%;
+    height: 4px;
+    background: #0d2a4a;
+    -webkit-appearance: none;
+    border-radius: 2px;
+    cursor: pointer;
+    outline: none;
+  }
+  #time-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #5bc8f5;
+    cursor: pointer;
+  }
+  #time-slider::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #5bc8f5;
+    border: none;
+  }
+
+  #time-display {
+    font-size: 10px;
+    color: #4a7090;
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  /* ── Stats ────────────────────────────────────── */
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 11px;
+    border-bottom: 1px solid #081520;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #4a7090; }
+  .stat-value { font-weight: 600; color: #c8d8e8; }
+  .stat-value.danger { color: #ff4444; }
+  .stat-value.warning { color: #ffaa22; }
+  .stat-value.safe { color: #44cc88; }
+
+  /* ── Risk gauge ───────────────────────────────── */
+  #risk-bar-container {
+    margin-top: 10px;
+  }
+  #risk-bar-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #3a5a7a;
+    margin-bottom: 5px;
+  }
+  #risk-bar-track {
+    height: 6px;
+    background: #0d2a4a;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #risk-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    transition: width 0.4s, background 0.4s;
+    background: #44cc88;
+  }
+
+  /* ── Legend ───────────────────────────────────── */
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 3px 0;
+    font-size: 11px;
+    color: #8ab0cc;
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-line {
+    width: 20px; height: 3px;
+    flex-shrink: 0;
+    border-radius: 1px;
+  }
+  .legend-circle {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+  }
+
+  /* ── Scrollbar ────────────────────────────────── */
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: #050c1c; }
+  #sidebar::-webkit-scrollbar-thumb { background: #0d2a4a; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="top-bar">
+  <h1>&#x1F6F0; Space Debris Collision Risk Simulation</h1>
+  <div id="top-stats">
+    <div>SATELLITE <span id="stat-sat-name">PRSS-1</span></div>
+    <div>DEBRIS FIELD <span id="stat-debris-source">Fengyun / Cosmos / Iridium</span></div>
+    <div>EVENTS <span id="stat-events">—</span></div>
+    <div>AT RISK <span id="stat-at-risk">—</span></div>
+  </div>
+</div>
+
+<!-- Main content -->
+<div id="main">
+
+  <!-- 3D canvas area -->
+  <div id="canvas-container">
+    <canvas id="three-canvas"></canvas>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div id="loading-text">Initializing simulation...</div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud">
+      Drag to rotate &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Right-drag to pan
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+
+    <!-- Parameters -->
+    <div class="panel-section">
+      <div class="section-title">Simulation Parameters</div>
+
+      <div class="param-row">
+        <div class="param-label">
+          <span>Collision Threshold</span>
+          <span class="param-value" id="val-threshold">1000 km</span>
+        </div>
+        <input type="range" id="slider-threshold" min="100" max="5000" step="50" value="1000">
+      </div>
+
+      <div class="param-row">
+        <div class="param-label">
+          <span>Number of Debris</span>
+          <span class="param-value" id="val-debris">10</span>
+        </div>
+        <input type="range" id="slider-debris" min="1" max="50" step="1" value="10">
+      </div>
+
+      <div class="param-row" style="margin-bottom:0">
+        <div class="param-label">
+          <span>Animation Speed</span>
+          <span class="param-value" id="val-speed">1.0×</span>
+        </div>
+        <input type="range" id="slider-speed" min="1" max="20" step="1" value="5">
+      </div>
+
+      <button class="btn btn-primary" id="btn-apply">Apply &amp; Recompute</button>
+    </div>
+
+    <!-- Playback -->
+    <div class="panel-section">
+      <div class="section-title">Playback</div>
+      <div id="playback-row">
+        <button class="btn" id="btn-prev" title="Step back">&#x25C0;</button>
+        <button class="btn" id="btn-play" title="Play / Pause">&#x25B6;</button>
+        <button class="btn" id="btn-next" title="Step forward">&#x25B6;&#x25B6;</button>
+      </div>
+      <div id="time-slider-container">
+        <input type="range" id="time-slider" min="0" max="109" step="1" value="0">
+      </div>
+      <div id="time-display">Step 1 / 90 &nbsp;|&nbsp; —</div>
+    </div>
+
+    <!-- Collision Analysis -->
+    <div class="panel-section">
+      <div class="section-title">Collision Analysis</div>
+      <div class="stat-row">
+        <span class="stat-label">Total Event Count</span>
+        <span class="stat-value" id="s-events">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Debris at Risk</span>
+        <span class="stat-value" id="s-at-risk">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Min Distance</span>
+        <span class="stat-value" id="s-min-dist">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Threshold</span>
+        <span class="stat-value" id="s-threshold">—</span>
+      </div>
+      <div id="risk-bar-container">
+        <div id="risk-bar-label">Overall Risk Level</div>
+        <div id="risk-bar-track"><div id="risk-bar-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="panel-section">
+      <div class="section-title">Legend</div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#00ff99;box-shadow:0 0 6px #00ff99;"></div>
+        <span>Main Satellite (PRSS-1)</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-line" style="background:rgba(0,180,100,0.5);"></div>
+        <span>Main Satellite Orbit</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#4488ff;"></div>
+        <span>Safe Debris</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#ffaa22;"></div>
+        <span>Nearby Debris (within 2× threshold)</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-dot" style="background:#ff3322;box-shadow:0 0 6px #ff3322;"></div>
+        <span>At-Risk Debris (within threshold)</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-circle" style="border-color:rgba(255,50,50,0.6);"></div>
+        <span>Collision Zone</span>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+
+<!-- Three.js import map -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ──────────────────────────────────────────────
+// Constants
+// ──────────────────────────────────────────────
+const SCALE = 1 / 1000;          // 1 Three.js unit = 1000 km
+const EARTH_RADIUS = 6.371;       // units (≈ 6371 km)
+
+// ──────────────────────────────────────────────
+// Three.js core
+// ──────────────────────────────────────────────
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000);
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 500);
+camera.position.set(0, 12, 22);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 8;
+controls.maxDistance = 80;
+
+// Resize handling
+function onResize() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth, h = container.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ──────────────────────────────────────────────
+// Lighting
+// ──────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x112244, 0.8));
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+sunLight.position.set(30, 15, 10);
+scene.add(sunLight);
+
+// ──────────────────────────────────────────────
+// Stars
+// ──────────────────────────────────────────────
+(function buildStars() {
+  const count = 4000;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 120 + Math.random() * 40;
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    pos[i*3+2] = r * Math.cos(phi);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xffffff, size: 0.18, transparent: true, opacity: 0.75
+  })));
+})();
+
+// ──────────────────────────────────────────────
+// Earth
+// ──────────────────────────────────────────────
+const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+
+// Procedural Earth: blue ocean base with slight green tint for landmass hint
+const earthMat = new THREE.MeshPhongMaterial({
+  color: 0x1a4a8a,
+  emissive: 0x010815,
+  specular: 0x224466,
+  shininess: 18,
+});
+const earth = new THREE.Mesh(earthGeo, earthMat);
+scene.add(earth);
+
+// Atmosphere glow (outer shell)
+const atmMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(EARTH_RADIUS * 1.025, 64, 64),
+  new THREE.MeshPhongMaterial({
+    color: 0x3399ff,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.BackSide,
+  })
+);
+scene.add(atmMesh);
+
+// City-lights shimmer effect (inner glow)
+const glowMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(EARTH_RADIUS * 1.005, 64, 64),
+  new THREE.MeshBasicMaterial({
+    color: 0x003366,
+    transparent: true,
+    opacity: 0.25,
+    side: THREE.BackSide,
+  })
+);
+scene.add(glowMesh);
+
+// ──────────────────────────────────────────────
+// Scene objects (rebuilt on each simulation load)
+// ──────────────────────────────────────────────
+let mainSatMesh = null;
+let mainOrbitLine = null;
+let thresholdSphere = null;
+let debrisMeshes = [];
+let debrisOrbitLines = [];
+let simData = null;
+let riskTimeIndex = [];   // per-debris: Set of at-risk time indices
+
+// ──────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────
+function toScene(p) {
+  return new THREE.Vector3(p[0] * SCALE, p[1] * SCALE, p[2] * SCALE);
+}
+
+function buildOrbitLine(positions, color, opacity = 0.35) {
+  const verts = new Float32Array(positions.length * 3);
+  positions.forEach((p, i) => {
+    verts[i*3]   = p[0] * SCALE;
+    verts[i*3+1] = p[1] * SCALE;
+    verts[i*3+2] = p[2] * SCALE;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+}
+
+function debrisColor(d, threshold) {
+  if (d.collision_risks.length > 0) return 0xff3322;
+  if (d.min_distance_km < threshold * 2) return 0xffaa22;
+  return 0x4488ff;
+}
+
+function clearSimObjects() {
+  if (mainSatMesh)   { scene.remove(mainSatMesh); mainSatMesh = null; }
+  if (mainOrbitLine) { scene.remove(mainOrbitLine); mainOrbitLine = null; }
+  if (thresholdSphere) { scene.remove(thresholdSphere); thresholdSphere = null; }
+  debrisMeshes.forEach(m => scene.remove(m));
+  debrisOrbitLines.forEach(l => scene.remove(l));
+  debrisMeshes = [];
+  debrisOrbitLines = [];
+  riskTimeIndex = [];
+}
+
+function buildScene(data) {
+  clearSimObjects();
+  simData = data;
+
+  // Main satellite mesh
+  mainSatMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.09, 16, 16),
+    new THREE.MeshPhongMaterial({
+      color: 0x00ff99,
+      emissive: 0x00cc66,
+      emissiveIntensity: 0.6,
+      shininess: 60,
+    })
+  );
+  scene.add(mainSatMesh);
+
+  // Main orbit line
+  mainOrbitLine = buildOrbitLine(data.main_satellite.positions, 0x00cc66, 0.5);
+  scene.add(mainOrbitLine);
+
+  // Collision threshold sphere (wireframe, centered on main satellite)
+  const tRad = data.threshold * SCALE;
+  thresholdSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(tRad, 24, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xff2200,
+      transparent: true,
+      opacity: 0.07,
+      wireframe: false,
+    })
+  );
+  // Wireframe overlay
+  const thresholdWire = new THREE.Mesh(
+    new THREE.SphereGeometry(tRad, 24, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xff4422,
+      transparent: true,
+      opacity: 0.25,
+      wireframe: true,
+    })
+  );
+  thresholdSphere.add(thresholdWire);
+  scene.add(thresholdSphere);
+
+  // Debris
+  data.debris.forEach(d => {
+    const color = debrisColor(d, data.threshold);
+    const isAtRisk = d.collision_risks.length > 0;
+
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 10, 10),
+      new THREE.MeshPhongMaterial({
+        color,
+        emissive: isAtRisk ? 0xff0000 : 0x000000,
+        emissiveIntensity: isAtRisk ? 0.5 : 0,
+        shininess: 30,
+      })
+    );
+    mesh.userData.baseColor = color;
+    mesh.userData.isAtRisk = isAtRisk;
+    const riskSet = new Set(d.collision_risks.map(r => r.time_index));
+    mesh.userData.riskSet = riskSet;
+    scene.add(mesh);
+    debrisMeshes.push(mesh);
+
+    const orbitColor = isAtRisk ? 0xff3322 : (d.min_distance_km < data.threshold * 2 ? 0xffaa22 : 0x2255aa);
+    const line = buildOrbitLine(d.positions, orbitColor, 0.22);
+    scene.add(line);
+    debrisOrbitLines.push(line);
+  });
+}
+
+function updatePositions(idx) {
+  if (!simData) return;
+
+  const mp = simData.main_satellite.positions[idx];
+  const sv = toScene(mp);
+  mainSatMesh.position.copy(sv);
+  thresholdSphere.position.copy(sv);
+
+  simData.debris.forEach((d, i) => {
+    const p = d.positions[idx];
+    debrisMeshes[i].position.set(p[0]*SCALE, p[1]*SCALE, p[2]*SCALE);
+
+    const atRiskNow = debrisMeshes[i].userData.riskSet.has(idx);
+    const mat = debrisMeshes[i].material;
+    if (atRiskNow) {
+      mat.color.set(0xff3322);
+      mat.emissive.set(0xff0000);
+      mat.emissiveIntensity = 0.7 + 0.3 * Math.sin(Date.now() * 0.006);
+    } else {
+      mat.color.set(debrisMeshes[i].userData.baseColor);
+      mat.emissive.set(0x000000);
+      mat.emissiveIntensity = 0;
+    }
+  });
+
+  // Update time display
+  const ts = simData.timestamps[idx];
+  document.getElementById('time-display').textContent =
+    `Step ${idx + 1} / ${simData.timestamps.length}  |  ${ts.replace('T', ' ').replace('Z', ' UTC')}`;
+  document.getElementById('time-slider').value = idx;
+}
+
+// ──────────────────────────────────────────────
+// Animation loop
+// ──────────────────────────────────────────────
+let timeIndex = 0;
+let isPlaying = false;
+let animSpeed = 5;
+let stepAccumulator = 0;
+let lastTimestamp = 0;
+const BASE_STEP_INTERVAL = 0.3; // seconds per step at speed=5
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+
+  const delta = Math.min((ts - lastTimestamp) / 1000, 0.15);
+  lastTimestamp = ts;
+
+  if (isPlaying && simData) {
+    stepAccumulator += delta * (animSpeed / 5);
+    if (stepAccumulator >= BASE_STEP_INTERVAL) {
+      stepAccumulator -= BASE_STEP_INTERVAL;
+      timeIndex = (timeIndex + 1) % simData.timestamps.length;
+      updatePositions(timeIndex);
+    }
+  }
+
+  // Slow Earth rotation
+  earth.rotation.y += 0.0005;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(t => { lastTimestamp = t; animate(t); });
+
+// ──────────────────────────────────────────────
+// Simulation data loading
+// ──────────────────────────────────────────────
+function showLoading(msg) {
+  const ov = document.getElementById('loading-overlay');
+  document.getElementById('loading-text').textContent = msg;
+  ov.classList.remove('hidden');
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+async function loadSimulation(debrisCount, threshold) {
+  showLoading('Computing trajectories...');
+  try {
+    const url = `/api/simulation?debris_count=${debrisCount}&threshold=${threshold}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    buildScene(data);
+    timeIndex = 0;
+    stepAccumulator = 0;
+    updatePositions(0);
+
+    // Update stats UI
+    document.getElementById('stat-events').textContent = data.total_collision_events;
+    document.getElementById('stat-at-risk').textContent =
+      `${data.debris_at_risk} / ${data.debris_count}`;
+
+    document.getElementById('s-events').textContent = data.total_collision_events;
+    document.getElementById('s-at-risk').textContent =
+      `${data.debris_at_risk} / ${data.debris_count}`;
+    document.getElementById('s-threshold').textContent = `${data.threshold} km`;
+
+    const minD = data.min_distance_km;
+    const minEl = document.getElementById('s-min-dist');
+    if (minD !== null) {
+      minEl.textContent = `${minD.toLocaleString()} km`;
+      minEl.className = 'stat-value ' + (
+        minD < threshold ? 'danger' : minD < threshold * 2 ? 'warning' : 'safe'
+      );
+    } else {
+      minEl.textContent = '—';
+      minEl.className = 'stat-value';
+    }
+
+    // Risk bar
+    const riskPct = data.debris_at_risk / Math.max(data.debris_count, 1) * 100;
+    const fill = document.getElementById('risk-bar-fill');
+    fill.style.width = `${riskPct}%`;
+    fill.style.background = riskPct > 50 ? '#ff3322' : riskPct > 20 ? '#ffaa22' : '#44cc88';
+
+    hideLoading();
+  } catch (err) {
+    document.getElementById('loading-text').textContent = `Error: ${err.message}`;
+  }
+}
+
+// ──────────────────────────────────────────────
+// UI wiring
+// ──────────────────────────────────────────────
+const sliderThreshold = document.getElementById('slider-threshold');
+const sliderDebris    = document.getElementById('slider-debris');
+const sliderSpeed     = document.getElementById('slider-speed');
+
+sliderThreshold.addEventListener('input', () => {
+  document.getElementById('val-threshold').textContent = `${sliderThreshold.value} km`;
+});
+sliderDebris.addEventListener('input', () => {
+  document.getElementById('val-debris').textContent = sliderDebris.value;
+});
+sliderSpeed.addEventListener('input', () => {
+  animSpeed = parseInt(sliderSpeed.value);
+  document.getElementById('val-speed').textContent = `${(animSpeed / 5).toFixed(1)}×`;
+});
+
+document.getElementById('btn-apply').addEventListener('click', () => {
+  const threshold = parseInt(sliderThreshold.value);
+  const debris = parseInt(sliderDebris.value);
+  loadSimulation(debris, threshold);
+});
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  isPlaying = !isPlaying;
+  document.getElementById('btn-play').innerHTML = isPlaying ? '&#x23F8;' : '&#x25B6;';
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (!simData) return;
+  isPlaying = false;
+  document.getElementById('btn-play').innerHTML = '&#x25B6;';
+  timeIndex = (timeIndex - 1 + simData.timestamps.length) % simData.timestamps.length;
+  updatePositions(timeIndex);
+});
+
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (!simData) return;
+  isPlaying = false;
+  document.getElementById('btn-play').innerHTML = '&#x25B6;';
+  timeIndex = (timeIndex + 1) % simData.timestamps.length;
+  updatePositions(timeIndex);
+});
+
+document.getElementById('time-slider').addEventListener('input', function() {
+  if (!simData) return;
+  isPlaying = false;
+  document.getElementById('btn-play').innerHTML = '&#x25B6;';
+  timeIndex = parseInt(this.value);
+  updatePositions(timeIndex);
+});
+
+// ──────────────────────────────────────────────
+// Initial load
+// ──────────────────────────────────────────────
+loadSimulation(10, 1000);
+</script>
+</body>
+</html>
