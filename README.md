@@ -125,7 +125,7 @@ Objects approaching predefined thresholds are flagged as potential threats.
 
 ### Clone Repository
 ```bash
-git clone https://github.com/amyxhehe/space-debris-ssa.git
+git clone https://github.com/amyxhehe/AI-Based-Space-Debris-Detection.git
 ```
 
 ### Navigate to Project Directory
