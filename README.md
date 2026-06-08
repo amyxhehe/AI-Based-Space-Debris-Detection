@@ -171,7 +171,9 @@ Potential enhancements include:
 ## Academic Information
 
 **Project Title:** Space Debris Detection for Space Situational Awareness
+
 **Degree Program:** Bachelor of Science in Artificial Intelligence
+
 **Project Type:** Final Year Project (FYP)
 
 ---
